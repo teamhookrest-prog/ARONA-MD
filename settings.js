@@ -11,10 +11,6 @@ import { watchFile, unwatchFile } from "fs";
 import { fileURLToPath } from "url";
 import moment from "moment-timezone";
 
-// —————— KHAFA TOPUP CONFIG ——————
-global.khafaApiKey = "KhafEXv_lg16vokglg9rbhuf"  // ← GANTI INI DENGAN APIKEY LO YANG BENER!
-global.khafaBaseUrl = "https://khafatopup.my.id"           // Bisa diganti kalau nanti pindah domain
-// ————————————————————————————————
 
 // ===== CONFIG =====
 global.owner = ["62895323195263"];
