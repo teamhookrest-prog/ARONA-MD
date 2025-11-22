@@ -1,9 +1,9 @@
 /* 
 Warning! Warning!
 Jangan di ganti cr ini bos
-© danz-xyz
+© danz-xyz + hookrest collab
 api free : hookrest.my.id
-owner : 62895323195263 [ Danz ]
+owner : 62895323195263 [ Danz x Hookrest ]
 */
 
 import { promises as fs } from 'fs';
@@ -11,11 +11,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 
-// Fix __dirname di ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Kategori Menu
 let tags = {
     'ai': 'Ai Menu',
     'main': 'Main Menu',
@@ -32,7 +30,6 @@ let tags = {
     'owner': 'Owner Menu',
 };
 
-// Template Tampilan Menu (TETAP CANTIK!)
 const defaultMenu = {
     before: `Hallo %name! 
 Saya adalah Bot Otomatis yang siap membantu Anda 24/7!
@@ -40,8 +37,8 @@ Saya adalah Bot Otomatis yang siap membantu Anda 24/7!
 *「  I N F O  B O T  」*
  •  *Mode :* %mode
  •  *Nama :* %me
- •  *Versi :* %version
- •  *Limits :* %limit
+ •  *Versi :* 1.0.8
+ •  *Limit :* %limit
  •  *Uptime :* %uptime
  
 *「  I N F O  S E R V E R  」*
@@ -55,24 +52,24 @@ Saya adalah Bot Otomatis yang siap membantu Anda 24/7!
     header: '╭─「 *%category* 」',
     body: '│ • %cmd',
     footer: '╰────\n',
-    after: `Powered By Danz-xzy`,
+    after: `© 2025 Hookrest × Danz-xyz`,
 };
 
 let handler = async (m, { conn, usedPrefix, command, text }) => {
     try {
         let user = global.db.data.users[m.sender];
-        if (!user) return;
-
         let name = `@${m.sender.split('@')[0]}`;
-        let botname = conn.user?.name || global.info?.namabot || 'Bot';
-        let limit = user.premiumTime > 0 ? 'Unlimited' : (user.limit || 0);
+        let botname = conn.user?.name || "Hookrest Bot";
 
-        // WIB Time
+        // LIMIT FIX — INI YANG BIKIN BENER!
+        let limit = user.premiumTime > 0 
+            ? '♾️ Unlimited' 
+            : `${user.limit ?? 10} limit`;
+
         const d = new Date(new Date().getTime() + 7 * 3600 * 1000);
         const locale = 'id-ID';
         const year = d.toLocaleDateString(locale, { year: 'numeric' });
 
-        // Baca package.json aman
         let _package = {};
         try {
             const pkgPath = path.join(__dirname, '../package.json');
@@ -80,18 +77,14 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
         } catch (e) {}
 
         let uptime = clockString(process.uptime() * 1000);
-        let platform = os.platform();
         let mode = global.opts['self'] ? 'Private' : 'Publik';
-        let rtotalreg = Object.values(global.db.data.users).filter(u => u.registered).length;
+        let platform = os.platform();
+        let cpuModel = os.cpus()[0]?.model.trim() || 'Unknown CPU';
+        let totalMem = formatBytes(os.totalmem());
+        let freeMem = formatBytes(os.freemem());
+        let serverArch = os.arch();
+        let serverOS = os.release();
 
-        const cpus = os.cpus();
-        const cpuModel = cpus?.[0]?.model.trim() || 'N/A';
-        const totalMem = formatBytes(os.totalmem());
-        const freeMem = formatBytes(os.freemem());
-        const serverArch = os.arch();
-        const serverOS = os.release();
-
-        // Daftar plugin
         let help = Object.values(global.plugins)
             .filter(plugin => !plugin.disabled)
             .map(plugin => ({
@@ -102,7 +95,6 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
                 premium: !!plugin.premium,
             }));
 
-        // Tambah tag baru otomatis
         for (let plugin of help) {
             if (plugin.tags && plugin.tags[0]) {
                 for (let tag of plugin.tags) {
@@ -113,12 +105,10 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
 
         const readMore = String.fromCharCode(8206).repeat(4001);
         let replace = {
-            '%': '%', p: usedPrefix, name, limit,
-            uptime, mode, me: botname,
-            version: _package.version || '1.0.0',
+            '%': '%', p: usedPrefix, name, limit, uptime, mode, me: botname,
+            version: _package.version || '1.0.8',
             platform, serverOS, serverArch, cpuModel,
-            totalMem, freeMem, rtotalreg,
-            readmore: readMore
+            totalMem, freeMem, readmore: readMore
         };
 
         let menuType = text?.toLowerCase().trim() || '';
@@ -129,14 +119,14 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
             let tagList = Object.keys(tags).map(tag => `│ • \`${usedPrefix + command} ${tag}\``).join('\n');
             menuText = [
                 before.replace(/%([a-zA-Z0-9]+)/g, (_, k) => replace[k] || _),
-                `Berikut daftar menu yang tersedia:`,
+                `Daftar Menu Tersedia:`,
                 `╭─「 *DAFTAR MENU* 」`,
                 `│ • \`${usedPrefix + command} all\``,
                 tagList,
                 `╰────\n`,
-                `Ketik \`${usedPrefix + command} <nama_menu>\` untuk melihat fiturnya.`,
-                `*Contoh:* \`${usedPrefix + command} sticker\``,
-                `\n\n` + after
+                `Ketik \`${usedPrefix + command} <menu>\` untuk detail.`,
+                `*Contoh:* \`${usedPrefix + command} ai\``,
+                `\n` + after
             ];
         } else if (menuType === 'all' || tags[menuType]) {
             let categories = menuType === 'all' ? Object.keys(tags) : [menuType];
@@ -152,19 +142,16 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
                     plugin.help.forEach(cmd => {
                         if (!cmd) return;
                         let premium = plugin.premium ? ' (Premium)' : '';
-                        let limit = plugin.limit ? ' (Limit)' : '';
+                        let limitTag = plugin.limit ? ' (Limit)' : '';
                         let prefix = plugin.prefix ? '' : usedPrefix;
-                        menuText.push(body.replace(/%cmd/g, prefix + cmd + premium + limit));
+                        menuText.push(body.replace(/%cmd/g, prefix + cmd + premium + limitTag));
                     });
                 });
                 menuText.push(footer);
             }
             menuText.push(after);
         } else {
-            menuText = [
-                `Menu \`${text}\` tidak ditemukan.`,
-                `Ketik \`${usedPrefix + command}\` untuk daftar menu.`
-            ];
+            menuText = [`Menu "${text}" tidak ada Bang :v`, `Ketik \`${usedPrefix + command}\` aja`];
         }
 
         let finalText = menuText.join('\n').replace(/%([a-zA-Z0-9]+)/g, (_, k) => replace[k] || _);
@@ -174,7 +161,7 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
             contextInfo: {
                 mentionedJid: [m.sender],
                 externalAdReply: {
-                    title: (global.info?.namabot || botname) + ` © ` + year,
+                    title: `${botname} © ${year}`,
                     body: `Uptime: ${uptime}`,
                     thumbnailUrl: global.thum || '',
                     sourceUrl: global.lgc || '',
@@ -185,8 +172,8 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
         }, { quoted: m });
 
     } catch (e) {
-        console.error("Error di main-menu.js:", e);
-        m.reply('Terjadi kesalahan saat menampilkan menu.');
+        console.error(e);
+        m.reply('Menu error Bang, coba lagi nanti :v');
     }
 };
 
@@ -196,7 +183,6 @@ handler.help = ['menu', 'help'];
 
 export default handler;
 
-// Helper Functions
 function clockString(ms) {
     let h = Math.floor(ms / 3600000);
     let m = Math.floor(ms / 60000) % 60;
