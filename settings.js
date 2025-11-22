@@ -1,0 +1,50 @@
+/* 
+⚠ Warning! ⚠
+Jangan di ganti cr ini bos
+© danz-xyz
+api free : hookrest.my.id
+owner : 62895323195263 [ Danz ]
+*/
+
+import chalk from "chalk";
+import { watchFile, unwatchFile } from "fs";
+import { fileURLToPath } from "url";
+import moment from "moment-timezone";
+
+// —————— KHAFA TOPUP CONFIG ——————
+global.khafaApiKey = "KhafEXv_lg16vokglg9rbhuf"  // ← GANTI INI DENGAN APIKEY LO YANG BENER!
+global.khafaBaseUrl = "https://khafatopup.my.id"           // Bisa diganti kalau nanti pindah domain
+// ————————————————————————————————
+
+// ===== CONFIG =====
+global.owner = ["62895323195263"];
+
+global.info = {
+    nomorbot: "0",
+    namabot: "αяσηα ωнαтѕαρρ вσт",
+    nomorowner: "62895323195263",
+    namaowner: "danz-xzy"
+}
+
+// ===== THUMBNAIL =====
+global.thum = "https://qu.ax/bJwgg.jpg";
+
+// ===== OPTIONS =====
+global.autoread = false; // OPSIONAL
+global.stage = {
+    wait: "*[ sʏsᴛᴇᴍ ] sᴇᴅᴀɴɢ ᴅɪᴘʀᴏsᴇs...*",
+    error: "*[ ᴡᴀʀɴɪɴɢ ] ᴘʀᴏsᴇs ɢᴀɢᴀʟ!*"
+}
+
+// ===== LINK ====
+global.lgh = "https://github.com/wirdan1"; // Github
+global.lwa = "https://wa.me/62895323195263"; // Whatsapp
+global.lig = ""; // Instagram
+global.lgc = ""; // Group Chat Whatsapp
+global.lch = ""; // Channels Whatsapp 
+let file = fileURLToPath(import.meta.url);
+watchFile(file, async () => {
+    unwatchFile(file);
+    console.log(`${chalk.white.bold(" [SISTEM]")} ${chalk.green.bold(`FILE DIUPDATE "settings.js"`)}`);
+    import(`${file}?update=${Date.now()}`);
+});
