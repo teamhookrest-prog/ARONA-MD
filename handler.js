@@ -18,7 +18,6 @@ import { jidNormalizedUser } from "baileys";
 const isNumber = x => typeof x === "number" && !isNaN(x);
 const printMessages = (await import("./function/print.js")).default;
 
-// === FUNGSI UNTUK MENDAPATKAN JID BOT YANG AMAN ===
 function getBotJid(conn) {
     if (!conn || !conn.user) return "";
     if (conn.user.id) return jidNormalizedUser(conn.user.id);
@@ -26,12 +25,40 @@ function getBotJid(conn) {
     return "";
 }
 
+// AUTO RESET LIMIT SETIAP HARI JAM 00:00 WIB (SUDAH AMAN)
+function dailyLimitReset() {
+    if (!global.db?.data) return;
+
+    const now = new Date();
+    const wib = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
+    const today = wib.getDate();
+
+    if (!global.db.data.settings) global.db.data.settings = {};
+
+    if (global.db.data.settings.lastLimitReset !== today) {
+        console.log(chalk.cyanBright(`[AUTO RESET] Semua limit user direset ke 10 — ${wib.toLocaleDateString("id-ID")}`));
+
+        for (let jid in global.db.data.users) {
+            if (global.db.data.users[jid] && typeof global.db.data.users[jid].limit === "number") {
+                global.db.data.users[jid].limit = 10;
+            }
+        }
+
+        global.db.data.settings.lastLimitReset = today;
+        global.db.saveDatabase?.();
+    }
+}
+
+setInterval(dailyLimitReset, 60_000);
+
 export async function handler(chatUpdate) {
     if (!chatUpdate) return;
 
     this.pushMessage(chatUpdate.messages).catch(console.error);
     let m = chatUpdate.messages[chatUpdate.messages.length - 1];
     if (!m) return;
+
+    dailyLimitReset();
 
     try {
         m = (await smsg(this, m)) || m;
@@ -43,17 +70,13 @@ export async function handler(chatUpdate) {
         }
         if (m.isBaileys) return;
 
-        // ========== VALIDASI MODE SELF/PUBLIC ==========
+        // VALIDASI MODE SELF/PUBLIC
         const decodedOwnLid = await Promise.all(global.owner.map(o => conn.getLidPN(`${o.replace(/[^0-9]/g, "")}@s.whatsapp.net`)));
         const isOwner = decodedOwnLid.includes(m.sender) || m.fromMe;
         
-        // Jika mode self aktif dan bukan owner, langsung return tanpa response
-        if (global.opts["self"] && !isOwner) {
-            return; // Stop proses handler tanpa kirim pesan apapun
-        }
-        // ========== END VALIDASI MODE SELF/PUBLIC ==========
+        if (global.opts["self"] && !isOwner) return;
+        // AKHIR VALIDASI MODE SELF/PUBLIC
 
-        // BOT JID YANG AMAN
         const botJid = getBotJid(conn);
 
         try {
@@ -79,7 +102,7 @@ export async function handler(chatUpdate) {
                 if (!isNumber(user.bannedDate)) user.bannedDate = -1;
             } else {
                 global.db.data.users[m.sender] = {
-                    name: m.name, age: -1, level: 0, exp: 0, limit: 10,
+                    name: m.name || "User", age: -1, level: 0, exp: 0, limit: 10,
                     afk: false, afkReason: "", register: false, premium: false, banned: false,
                     afkTime: -1, regTime: -1, premiumDate: -1, bannedDate: -1
                 };
@@ -111,19 +134,18 @@ export async function handler(chatUpdate) {
                 }
             }
 
-            // BOT SETTINGS (per nomor)
+            // BOT SETTINGS
             let setting = global.db.data.settings[botJid];
             if (typeof setting !== "object") global.db.data.settings[botJid] = {};
             if (setting) {
                 if (!("chatMode" in setting)) setting.chatMode = "";
                 if (!("antispam" in setting)) setting.antispam = true;
-                if (!("autoread" in setting)) setting.autoread = false; // AUTOREAD NONAKTIF
+                if (!("autoread" in setting)) setting.autoread = false;
                 if (!("autobackup" in setting)) setting.autobackup = true;
                 if (!isNumber(setting.backupDate)) setting.backupDate = -1;
             } else {
                 global.db.data.settings[botJid] = {
-                    chatMode: "", antispam: true, autoread: false, // AUTOREAD NONAKTIF
-                    autobackup: true, backupDate: -1
+                    chatMode: "", antispam: true, autoread: false, autobackup: true, backupDate: -1
                 };
             }
         } catch (error) {
@@ -133,14 +155,12 @@ export async function handler(chatUpdate) {
         if (typeof m.text !== "string") m.text = "";
 
         const isROwner = decodedOwnLid.includes(m.sender) || (botJid && m.sender === botJid);
-
         let usedPrefix;
 
-        // === ANTI RATE-OVERLIMIT: GROUP METADATA DENGAN DELAY + CACHE ===
+        // GROUP METADATA CACHE
         let groupMetadata = {};
         if (m.isGroup) {
             try {
-                // C - cache dulu
                 if (conn.chats[m.chat]?.metadata) {
                     groupMetadata = conn.chats[m.chat].metadata;
                 } else {
@@ -195,6 +215,7 @@ export async function handler(chatUpdate) {
                 if (await plugin.before.call(this, m, { match, conn: this, participants, groupMetadata, user, bot, isROwner, isOwner, isRAdmin, isAdmin, isBotAdmin, isPremium, isBannned, isMuted, isRegister, isSewa, chatUpdate, __dirname, __filename })) continue;
             }
             if (typeof plugin !== "function") continue;
+
             if ((usedPrefix = (match[0] || "")[0])) {
                 let noPrefix = m.text.replace(usedPrefix, "");
                 let [command, ...args] = noPrefix.trim().split(` `).filter(v => v);
@@ -224,6 +245,20 @@ export async function handler(chatUpdate) {
 
                 m.isCommand = true;
 
+                // SISTEM LIMIT
+                if (plugin.limit) {
+                    const cost = typeof plugin.limit === "number" ? plugin.limit : 1;
+                    const user = global.db.data.users[m.sender];
+
+                    if (user.limit < cost) {
+                        this.reply(m.chat, `Limit kamu habis!\nSisa limit: ${user.limit}\nLimit direset tiap jam 00:00 WIB`, m);
+                        continue;
+                    }
+
+                    user.limit -= cost;
+                    m.reply(`Limit -${cost} | Sisa: ${user.limit}`);
+                }
+
                 let extra = { match, conn: this, usedPrefix, noPrefix, _args, args, command, text, participants, groupMetadata, user, bot, isROwner, isOwner, isRAdmin, isAdmin, isBotAdmin, isPremium, isBannned, isMuted, isRegister, isSewa, chatUpdate, __dirname, __filename };
 
                 try {
@@ -247,7 +282,6 @@ export async function handler(chatUpdate) {
     } catch (error) {
         console.log(error);
     } finally {
-        // AUTOREAD DINONAKTIFKAN - TIDAK ADA LAGI AUTO READ
         try { await printMessages(m, this); } catch (e) { console.log(e); }
     }
 }
