@@ -7,6 +7,8 @@ owner : 62895323195263 [ Danz x Hookrest ]
 */
 
 import { promises as fs } from 'fs';
+import axios from 'axios';
+import { toPTT } from '../function/converter.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
@@ -21,11 +23,14 @@ let tags = {
     'group': 'Groups Menu',
     'maker': 'Maker Menu',
     'download': 'Downloader Menu',
+    'islamic': 'Islam Menu',
     'khafa': 'Khafa Store Menu',
     'sticker': 'Sticker Menu',
     'tools': 'Tools Menu',
     'info': 'Info Menu',
+    'internet': 'Internet Menu',
     'xp': 'Exp Menu',
+    'random': 'Random Menu',
     'search': 'Search Menu',
     'owner': 'Owner Menu',
 };
@@ -52,29 +57,23 @@ Saya adalah Bot Otomatis yang siap membantu Anda 24/7!
     header: '╭─「 *%category* 」',
     body: '│ • %cmd',
     footer: '╰────\n',
-    after: `© 2025 Hookrest × Danz-xyz`,
+    after: `> © 2025 v.d`,
 };
 
 let handler = async (m, { conn, usedPrefix, command, text }) => {
     try {
-        let user = global.db.data.users[m.sender];
+
+        let user = global.db.data.users[m.sender] || {};
         let name = `@${m.sender.split('@')[0]}`;
         let botname = conn.user?.name || "Hookrest Bot";
 
-        // LIMIT FIX — INI YANG BIKIN BENER!
-        let limit = user.premiumTime > 0 
+        let limit = user?.premiumTime > 0 
             ? '♾️ Unlimited' 
-            : `${user.limit ?? 10} limit`;
+            : `${user?.limit ?? 10} limit`;
 
         const d = new Date(new Date().getTime() + 7 * 3600 * 1000);
         const locale = 'id-ID';
         const year = d.toLocaleDateString(locale, { year: 'numeric' });
-
-        let _package = {};
-        try {
-            const pkgPath = path.join(__dirname, '../package.json');
-            _package = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
-        } catch (e) {}
 
         let uptime = clockString(process.uptime() * 1000);
         let mode = global.opts['self'] ? 'Private' : 'Publik';
@@ -84,6 +83,12 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
         let freeMem = formatBytes(os.freemem());
         let serverArch = os.arch();
         let serverOS = os.release();
+
+        let _package = {};
+        try {
+            const pkgPath = path.join(__dirname, '../package.json');
+            _package = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+        } catch {}
 
         let help = Object.values(global.plugins)
             .filter(plugin => !plugin.disabled)
@@ -96,10 +101,8 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
             }));
 
         for (let plugin of help) {
-            if (plugin.tags && plugin.tags[0]) {
-                for (let tag of plugin.tags) {
-                    if (!(tag in tags)) tags[tag] = tag;
-                }
+            for (let tag of plugin.tags) {
+                if (!(tag in tags)) tags[tag] = tag;
             }
         }
 
@@ -129,33 +132,30 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
                 `\n` + after
             ];
         } else if (menuType === 'all' || tags[menuType]) {
-            let categories = menuType === 'all' ? Object.keys(tags) : [menuType];
             menuText.push(before.replace(/%([a-zA-Z0-9]+)/g, (_, k) => replace[k] || _));
 
+            let categories = menuType === 'all' ? Object.keys(tags) : [menuType];
             for (let tag of categories) {
-                if (!tags[tag]) continue;
                 let filtered = help.filter(h => h.tags.includes(tag) && h.help[0]);
-                if (filtered.length === 0) continue;
+                if (!filtered.length) continue;
 
                 menuText.push(header.replace(/%category/g, tags[tag]));
                 filtered.forEach(plugin => {
                     plugin.help.forEach(cmd => {
-                        if (!cmd) return;
+                        let prefix = plugin.prefix ? '' : usedPrefix;
                         let premium = plugin.premium ? ' (Premium)' : '';
                         let limitTag = plugin.limit ? ' (Limit)' : '';
-                        let prefix = plugin.prefix ? '' : usedPrefix;
                         menuText.push(body.replace(/%cmd/g, prefix + cmd + premium + limitTag));
                     });
                 });
                 menuText.push(footer);
             }
             menuText.push(after);
-        } else {
-            menuText = [`Menu "${text}" tidak ada Bang :v`, `Ketik \`${usedPrefix + command}\` aja`];
         }
 
         let finalText = menuText.join('\n').replace(/%([a-zA-Z0-9]+)/g, (_, k) => replace[k] || _);
 
+        // ============ SEND MENU FIRST ============
         await conn.sendMessage(m.chat, {
             text: finalText,
             contextInfo: {
@@ -171,6 +171,24 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
             }
         }, { quoted: m });
 
+        // ============ DELAY + SEND AUDIO ============
+        if (global.audio) {
+            await new Promise(resolve => setTimeout(resolve, 900)); // delay 0.9 detik
+
+            try {
+                const buffer = (await axios.get(global.audio, { responseType: 'arraybuffer' })).data;
+                const { data: audioPTT } = await toPTT(buffer, 'mp3');
+
+                await conn.sendMessage(m.chat, {
+                    audio: audioPTT,
+                    mimetype: 'audio/ogg; codecs=opus',
+                    ptt: true
+                }, { quoted: m });
+            } catch (e) {
+                console.error("Audio menu error:", e);
+            }
+        }
+
     } catch (e) {
         console.error(e);
         m.reply('Menu error Bang, coba lagi nanti :v');
@@ -180,21 +198,19 @@ let handler = async (m, { conn, usedPrefix, command, text }) => {
 handler.command = /^(menu|help|perintah)$/i;
 handler.tags = ['main'];
 handler.help = ['menu', 'help'];
-
 export default handler;
 
+
+// ======================================
 function clockString(ms) {
     let h = Math.floor(ms / 3600000);
     let m = Math.floor(ms / 60000) % 60;
     let s = Math.floor(ms / 1000) % 60;
     return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
 }
-
 function formatBytes(bytes, decimals = 2) {
     if (!+bytes) return '0 Bytes';
     const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(dm)} ${sizes[i]}`;
+    return `${(bytes / Math.pow(k, i)).toFixed(decimals)} ${['Bytes','KB','MB','GB','TB'][i]}`;
 }
