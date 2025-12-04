@@ -25,6 +25,9 @@ global.info = {
 // ===== THUMBNAIL =====
 global.thum = "https://qu.ax/bJwgg.jpg";
 
+// ==== audio ===
+global.audio = "https://api.nekolabs.web.id/f/daan-2.mp3";
+
 // ===== OPTIONS =====
 global.autoread = false; // OPSIONAL
 global.stage = {
