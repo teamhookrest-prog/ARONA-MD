@@ -15,6 +15,10 @@ import { unwatchFile, watchFile } from "fs";
 import chalk from "chalk";
 import { jidNormalizedUser } from "baileys";
 
+// GLOBAL CACHE UNTUK ANTI RATE-OVERLIMIT
+if (!global.groupCache) global.groupCache = new Map();
+if (!global.replyCooldown) global.replyCooldown = new Set();
+
 const isNumber = x => typeof x === "number" && !isNaN(x);
 const printMessages = (await import("./function/print.js")).default;
 
@@ -42,10 +46,8 @@ function dailyLimitReset() {
         const user = global.db.data.users[jid];
         if (!user) continue;
         
-        // HANYA RESET UNTUK USER BIASA, SKIP PREMIUM
         const isPremiumActive = user.premium && user.premiumTime > Date.now();
         if (!isPremiumActive && typeof user.limit === "number") {
-            // Reset ke 10 hanya jika limit bukan unlimited
             if (user.limit !== Infinity && user.limit !== -1) {
                 user.limit = 10;
             }
@@ -57,6 +59,20 @@ function dailyLimitReset() {
 }
 
 setInterval(dailyLimitReset, 60_000);
+
+// REPLY DENGAN COOLDOWN ANTI SPAM & ANTI 500 ERROR
+const originalReply = async function (chatId, text, quoted) {
+    const key = `${chatId}-${Date.now()}`;
+    if (global.replyCooldown.has(key)) return;
+    global.replyCooldown.add(key);
+    setTimeout(() => global.replyCooldown.delete(key), 2000);
+
+    try {
+        return await this.sendMessage(chatId, { text: text.trim() }, { quoted });
+    } catch (e) {
+        console.log("Gagal kirim reply:", e);
+    }
+};
 
 export async function handler(chatUpdate) {
     if (!chatUpdate) return;
@@ -96,14 +112,13 @@ export async function handler(chatUpdate) {
                 if (!isNumber(user.level)) user.level = 0;
                 if (!isNumber(user.exp)) user.exp = 0;
                 
-                // INISIALISASI LIMIT - HANYA JIKA BELUM ADA ATAU BUKAN PREMIUM
                 const isPremiumActive = user.premium && user.premiumTime > Date.now();
                 if (!isNumber(user.limit)) {
-                    user.limit = isPremiumActive ? Infinity : 10; // Premium unlimited, biasa 10
+                    user.limit = isPremiumActive ? Infinity : 10;
                 } else if (isPremiumActive && user.limit !== Infinity) {
-                    user.limit = Infinity; // Upgrade ke premium -> unlimited
+                    user.limit = Infinity;
                 } else if (!isPremiumActive && (user.limit === Infinity || user.limit === -1)) {
-                    user.limit = 10; // Downgrade dari premium -> reset ke 10
+                    user.limit = 10;
                 }
                 
                 if (!("afk" in user)) user.afk = false;
@@ -118,10 +133,21 @@ export async function handler(chatUpdate) {
                 if (!isNumber(user.bannedDate)) user.bannedDate = -1;
             } else {
                 global.db.data.users[m.sender] = {
-                    name: m.name || "User", age: -1, level: 0, exp: 0, 
-                    limit: 10, // Default untuk user baru
-                    afk: false, afkReason: "", register: false, premium: false, banned: false,
-                    afkTime: -1, regTime: -1, premiumTime: 0, premiumDate: -1, bannedDate: -1
+                    name: m.name || "User",
+                    age: -1,
+                    level: 0,
+                    exp: 0,
+                    limit: 10,
+                    afk: false,
+                    afkReason: "",
+                    register: false,
+                    premium: false,
+                    banned: false,
+                    afkTime: -1,
+                    regTime: -1,
+                    premiumTime: 0,
+                    premiumDate: -1,
+                    bannedDate: -1
                 };
             }
 
@@ -144,9 +170,18 @@ export async function handler(chatUpdate) {
                     if (!isNumber(chat.sewaDate)) chat.sewaDate = -1;
                 } else {
                     global.db.data.chats[m.chat] = {
-                        antispam: false, antilink: false, antivirtex: false, mute: false,
-                        detect: true, sambutan: true, sewa: false,
-                        sWelcome: "", sBye: "", sPromote: "", sDemote: "", sewaDate: -1
+                        antispam: false,
+                        antilink: false,
+                        antivirtex: false,
+                        mute: false,
+                        detect: true,
+                        sambutan: true,
+                        sewa: false,
+                        sWelcome: "",
+                        sBye: "",
+                        sPromote: "",
+                        sDemote: "",
+                        sewaDate: -1
                     };
                 }
             }
@@ -162,7 +197,11 @@ export async function handler(chatUpdate) {
                 if (!isNumber(setting.backupDate)) setting.backupDate = -1;
             } else {
                 global.db.data.settings[botJid] = {
-                    chatMode: "", antispam: true, autoread: false, autobackup: true, backupDate: -1
+                    chatMode: "",
+                    antispam: true,
+                    autoread: false,
+                    autobackup: true,
+                    backupDate: -1
                 };
             }
         } catch (error) {
@@ -174,20 +213,26 @@ export async function handler(chatUpdate) {
         const isROwner = decodedOwnLid.includes(m.sender) || (botJid && m.sender === botJid);
         let usedPrefix;
 
-        let groupMetadata = {};
+        // ANTI RATE-OVERLIMIT: CACHE + DELAY GROUP METADATA
+        let groupMetadata = { participants: [] };
         if (m.isGroup) {
-            try {
-                if (this.chats[m.chat]?.metadata) {
-                    groupMetadata = this.chats[m.chat].metadata;
-                } else {
-                    await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1500) + 1500));
-                    groupMetadata = await this.groupMetadata(m.chat).catch(() => ({}));
-                    if (!this.chats[m.chat]) this.chats[m.chat] = {};
-                    this.chats[m.chat].metadata = groupMetadata;
+            if (global.groupCache.has(m.chat)) {
+                groupMetadata = global.groupCache.get(m.chat);
+            } else {
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        await new Promise(r => setTimeout(r, 2500 + i * 4000));
+                        const meta = await this.groupMetadata(m.chat);
+                        if (meta) {
+                            groupMetadata = meta;
+                            global.groupCache.set(m.chat, meta);
+                            setTimeout(() => global.groupCache.delete(m.chat), 600000); // 10 menit
+                            break;
+                        }
+                    } catch (e) {
+                        if (i === 2) console.log(`Gagal fetch metadata ${m.chat} setelah 3x coba`);
+                    }
                 }
-            } catch (e) {
-                console.log("Gagal fetch group metadata:", e);
-                groupMetadata = {};
             }
         }
 
@@ -234,10 +279,10 @@ export async function handler(chatUpdate) {
 
             if ((usedPrefix = (match[0] || "")[0])) {
                 let noPrefix = m.text.replace(usedPrefix, "");
-                let [command, ...args] = noPrefix.trim().split(` `).filter(v => v);
+                let [command, ...args] = noPrefix.trim().split` `.filter(v => v);
                 args = args || [];
-                let _args = noPrefix.trim().split(` `).slice(1);
-                let text = _args.join(` `);
+                let _args = noPrefix.trim().split` `.slice(1);
+                let text = _args.join` `;
                 command = (command || "").toLowerCase();
                 let isAccept = plugin.command instanceof RegExp ? plugin.command.test(command) :
                                Array.isArray(plugin.command) ? plugin.command.some(cmd => (cmd instanceof RegExp ? cmd.test(command) : cmd === command)) :
@@ -261,7 +306,7 @@ export async function handler(chatUpdate) {
 
                 m.isCommand = true;
 
-                // SISTEM LIMIT YANG DIPERBAIKI
+                // SISTEM LIMIT TETAP 100% SEPERTI ASLI
                 let limitUsed = false;
                 let limitCost = 0;
                 let isPremiumActive = isPremium;
@@ -270,24 +315,42 @@ export async function handler(chatUpdate) {
                     limitCost = typeof plugin.limit === "number" ? plugin.limit : 1;
                     const user = global.db.data.users[m.sender];
 
-                    // CEK APAKAH USER MEMILIKI LIMIT CUKUP
                     if (!isPremiumActive) {
-                        // Untuk user biasa, cek limit
                         if (user.limit < limitCost) {
-                            this.reply(m.chat, 
+                            await originalReply.call(this, m.chat, 
 `> *[ Warning ]* Limit kamu habis bro, tunggu reset limit ya
 Sisa limit: ${user.limit}
 *Reset otomatis tiap jam 00:00 WIB*`, m);
-                            continue; // BLOCK PENGGUNAAN FITUR
+                            continue;
                         }
                         limitUsed = true;
-                    } else {
-                        // Untuk premium user, limit tidak berkurang
-                        limitUsed = false;
                     }
                 }
 
-                let extra = { match, conn: this, usedPrefix, noPrefix, _args, args, command, text, participants, groupMetadata, user, bot, isROwner, isOwner, isRAdmin, isAdmin, isBotAdmin, isPremium, isBannned, isMuted, isRegister, isSewa, chatUpdate, __dirname, __filename };
+                // SISTEM LEVELING + AUTO LEVEL UP (WAJIB REGISTER)
+                if (isRegister) {
+                    let expGain = isPremium ? 20 : 10;
+                    if (plugin.limit) expGain += isPremium ? 15 : 10;
+
+                    let oldLevel = user.level;
+                    user.exp += expGain;
+
+                    let expNeeded = user.level * 100 + Math.pow(user.level, 2) * 50;
+
+                    if (user.exp >= expNeeded) {
+                        user.level += 1;
+                        user.exp -= expNeeded;
+
+                        await originalReply.call(this, m.chat, 
+`LEVEL UP!
+@${m.sender.split('@')[0]} naik ke Level ${user.level}
+
+Exp: ${user.exp} / ${(user.level * 100 + Math.pow(user.level, 2) * 50)}
+Makin tinggi level, makin susah naik!`, m, { mentions: [m.sender] });
+                    }
+                }
+
+                let extra = { match, conn: this, usedPrefix, noPrefix, args, command, text, participants, groupMetadata, user, bot, isROwner, isOwner, isRAdmin, isAdmin, isBotAdmin, isPremium, isBannned, isMuted, isRegister, isSewa, chatUpdate, __dirname, __filename };
 
                 try {
                     await plugin.call(this, m, extra);
@@ -295,23 +358,26 @@ Sisa limit: ${user.limit}
                     console.log(e);
                     const text = format(e);
                     if (e.name && decodedOwnLid[0]) {
-                        let msg = `*『 ERROR MESSAGE 』*\n*PLUGIN:* ${m.plugin}\n*SENDER:* ${m.sender}\n*CHAT:* ${m.chat}\n*COMMAND:* ${usedPrefix + command}\n*ERROR:*\n${text}`;
+                        let msg = `*『 ERROR MESSAGE 』*
+*PLUGIN:* ${m.plugin}
+*SENDER:* ${m.sender}
+*CHAT:* ${m.chat}
+*COMMAND:* ${usedPrefix + command}
+*ERROR:*
+${text}`;
                         await this.reply(decodedOwnLid[0], msg);
                     }
                 } finally {
                     // KURANGI LIMIT HANYA UNTUK USER BIASA
                     if (plugin.limit && limitUsed && !isPremiumActive) {
                         global.db.data.users[m.sender].limit -= limitCost;
-                        this.reply(m.chat, 
-`Limit berkurang -${limitCost} | Sisa: ${global.db.data.users[m.sender].limit} limit
-Hemat limit ya bre!`, m);
+                        await originalReply.call(this, m.chat, 
+`ʟɪᴍɪᴛ ʙᴇʀᴋᴜʀᴀɴɢ -${limitCost} | sɪsᴀ: ${global.db.data.users[m.sender].limit} ʟɪᴍɪᴛ
+ʜᴇᴍᴀʏ ʟɪᴍɪᴛ ʏᴀ ʙʀᴇ!`, m);
                     }
 
-                    // NOTIFIKASI UNTUK PREMIUM USER
                     if (plugin.limit && isPremiumActive) {
-                        this.reply(m.chat, 
-`Anjir!!! Ini mah premium user 🎉
-Limit ga berkurang bre! Unlimited mulu wkwkwk`, m);
+                        await originalReply.call(this, m.chat, `> ᴜsᴇʀ ᴘʀᴇᴍɪᴜᴍ`, m);
                     }
 
                     if (typeof plugin.after === "function") {
@@ -328,8 +394,6 @@ Limit ga berkurang bre! Unlimited mulu wkwkwk`, m);
         try { await printMessages(m, this); } catch (e) { console.log(e); }
     }
 }
-
-// ... (bagian participantsUpdate, groupsUpdate, catchDeleted tetap sama)
 
 export async function participantsUpdate({ id, participants, action }) {
     try {
@@ -427,15 +491,22 @@ export async function catchDeleted(message) {
 
 global.dFail = (type, m, conn) => {
     let msg = {
-        rowner: "*ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴏɴʟʏ*", owner: "*ᴏᴡɴᴇʀ ᴏɴʟʏ*", premium: "*ᴘʀᴇᴍɪᴜᴍ ᴏɴʟʏ*",
-        group: "*ɢʀᴏᴜᴘ ᴄʜᴀᴛ ᴏɴʟʏ*", private: "*ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ ᴏɴʟʏ*", admin: "*ᴀᴅᴍɪɴ ᴏɴʟʏ*",
-        botAdmin: "*ʙᴏᴛ ᴀᴅᴍɪɴ ʀᴇǫᴜɪʀᴇᴅ*", sewa: "*ᴘᴀɪᴅ ɢʀᴏᴜᴘ ᴏɴʟʏ*", unreg: "*ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ʀᴇɢɪsᴛᴇʀᴇᴅ*",
-        restrict: "*ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴄᴏᴍᴍᴀɴᴅ*", disable: "*ᴅɪsᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅ*"
+        rowner: "*ᴅᴇᴠᴇʟᴏᴘᴘᴇʀ ᴏɴʟʏ*",
+        owner: "*ᴏᴡɴᴇʀ ᴏɴʟʏ*",
+        premium: "*ᴘʀᴇᴍɪᴜᴍ ᴏɴʟʏ*",
+        group: "*ɢʀᴏᴜᴘ ᴄʜᴀᴛ ᴏɴʟʏ*",
+        private: "*ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ ᴏɴʟʏ*",
+        admin: "*ᴀᴅᴍɪɴ ᴏɴʟʏ*",
+        botAdmin: "*ʙᴏᴛ ᴀᴅᴍɪɴ ʀᴇǫᴜɪʀᴇᴅ*",
+        sewa: "*ᴘᴀɪᴅ ɢʀᴏᴜᴘ ᴏɴʟʏ*",
+        unreg: "*ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ʀᴇɢɪsᴛᴇʀᴇᴅ*",
+        restrict: "*ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴄᴏᴍᴍᴀɴᴅ*",
+        disable: "*ᴅɪsᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅ*"
     }[type];
     if (msg) return conn.reply(m.chat, msg, m);
 };
 
-// FIX ERROR BIND + HOT RELOAD AMAN DI PTERODACTYL
+// HOT RELOAD AMAN DI PTERODACTYL
 let file = fileURLToPath(import.meta.url);
 watchFile(file, () => {
     unwatchFile(file);
