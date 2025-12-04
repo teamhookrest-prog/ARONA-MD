@@ -1,12 +1,10 @@
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=waving&color=000000&height=100&section=header&text=~%20Arona&fontColor=ffffff&fontSize=50&animation=twinkling" />
 </p>
----
 
 <div align="center">     
 
 </div>
----
 
 Base Script WhatsApp Tipe ESM yang ringan, cepat, stabil, dan modern. Dibangun dengan Baileys berbasis ECMAScript Modules (ESM), mudah dipahami, serta fleksibel untuk dikembangkan lebih lanjut.
 
